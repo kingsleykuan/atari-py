@@ -2,20 +2,43 @@
 # Author: Ben Goodrich
 # This directly implements a python version of the arcade learning
 # environment interface.
-__all__ = ['ALEInterface']
+__all__ = ["ALEInterface"]
+
+import os
+import sys
+import warnings
+import platform
+
+import numpy as np
 
 from ctypes import *
-import numpy as np
 from numpy.ctypeslib import as_ctypes
-import os
-import six
 
-if os.name == 'posix':
-    ale_lib = cdll.LoadLibrary(os.path.join(os.path.dirname(__file__),
-                                            'ale_interface/libale_c.so'))
-else:
-    ale_lib = cdll.LoadLibrary(os.path.join(os.path.dirname(__file__),
-                                            'ale_interface/ale_c.dll'))
+
+def _load_cdll(path, name):
+    if sys.platform.startswith("linux"):
+        ext_suffix = ".so"
+    elif sys.platform.startswith("darwin"):
+        ext_suffix = ".dylib"
+    elif sys.platform.startswith("win"):
+        ext_suffix = ".dll"
+    else:
+        raise RuntimeError(
+            'Platform "{}" not recognized while trying to resolve shared library'.format(
+                sys.platform))
+
+    library_format = "{}{}" if platform.system() == "Windows" else "lib{}{}"
+    library_path = os.path.join(path, library_format.format(name, ext_suffix))
+
+    try:
+        return cdll.LoadLibrary(library_path)
+    except Exception as ex:
+        raise RuntimeError(
+            "Failed to load library {}. Attempted to load {}.\n{}".format(
+                name, library_path, ex))
+
+
+ale_lib = _load_cdll(os.path.dirname(__file__), "ale_c")
 
 ale_lib.ALE_new.argtypes = None
 ale_lib.ALE_new.restype = c_void_p
@@ -83,8 +106,6 @@ ale_lib.getScreenHeight.argtypes = [c_void_p]
 ale_lib.getScreenHeight.restype = c_int
 ale_lib.getScreenRGB.argtypes = [c_void_p, c_void_p]
 ale_lib.getScreenRGB.restype = None
-ale_lib.getScreenRGB2.argtypes = [c_void_p, c_void_p]
-ale_lib.getScreenRGB2.restype = None
 ale_lib.getScreenGrayscale.argtypes = [c_void_p, c_void_p]
 ale_lib.getScreenGrayscale.restype = None
 ale_lib.saveState.argtypes = [c_void_p]
@@ -112,10 +133,12 @@ ale_lib.decodeState.restype = c_void_p
 ale_lib.setLoggerMode.argtypes = [c_int]
 ale_lib.setLoggerMode.restype = None
 
-def _as_bytes(s):
-    if hasattr(s, 'encode'):
-        return s.encode('utf8')
-    return s
+
+def _str_as_bytes(arg):
+    if isinstance(arg, str):
+        return arg.encode("utf-8")
+    return arg
+
 
 class ALEInterface(object):
     # Logger enum
@@ -128,25 +151,31 @@ class ALEInterface(object):
         self.obj = ale_lib.ALE_new()
 
     def getString(self, key):
-        return ale_lib.getString(self.obj, _as_bytes(key))
+        return ale_lib.getString(self.obj, _str_as_bytes(key))
+
     def getInt(self, key):
-        return ale_lib.getInt(self.obj, _as_bytes(key))
+        return ale_lib.getInt(self.obj, _str_as_bytes(key))
+
     def getBool(self, key):
-        return ale_lib.getBool(self.obj, _as_bytes(key))
+        return ale_lib.getBool(self.obj, _str_as_bytes(key))
+
     def getFloat(self, key):
-        return ale_lib.getFloat(self.obj, _as_bytes(key))
+        return ale_lib.getFloat(self.obj, _str_as_bytes(key))
 
     def setString(self, key, value):
-      ale_lib.setString(self.obj, _as_bytes(key), _as_bytes(value))
+        ale_lib.setString(self.obj, _str_as_bytes(key), _str_as_bytes(value))
+
     def setInt(self, key, value):
-      ale_lib.setInt(self.obj, _as_bytes(key), int(value))
+        ale_lib.setInt(self.obj, _str_as_bytes(key), int(value))
+
     def setBool(self, key, value):
-      ale_lib.setBool(self.obj, _as_bytes(key), bool(value))
+        ale_lib.setBool(self.obj, _str_as_bytes(key), bool(value))
+
     def setFloat(self, key, value):
-      ale_lib.setFloat(self.obj, _as_bytes(key), float(value))
+        ale_lib.setFloat(self.obj, _str_as_bytes(key), float(value))
 
     def loadROM(self, rom_file):
-        ale_lib.loadROM(self.obj, _as_bytes(rom_file))
+        ale_lib.loadROM(self.obj, _str_as_bytes(rom_file))
 
     def act(self, action):
         return ale_lib.act(self.obj, int(action))
@@ -223,10 +252,10 @@ class ALEInterface(object):
         If it is None,  then this function will initialize it
         Note: This is the raw pixel values from the atari,  before any RGB palette transformation takes place
         """
-        if(screen_data is None):
+        if screen_data is None:
             width = ale_lib.getScreenWidth(self.obj)
             height = ale_lib.getScreenHeight(self.obj)
-            screen_data = np.zeros(width*height, dtype=np.uint8)
+            screen_data = np.zeros(width * height, dtype=np.uint8)
         ale_lib.getScreen(self.obj, as_ctypes(screen_data))
         return screen_data
 
@@ -235,35 +264,12 @@ class ALEInterface(object):
         screen_data MUST be a numpy array of uint8. This can be initialized like so:
         screen_data = np.empty((height,width,3), dtype=np.uint8)
         If it is None,  then this function will initialize it.
-        On little-endian machines like x86, the channels are BGR order:
-            screen_data[x, y, 0:3] is [blue, green, red]
-        On big-endian machines (rare in 2017) the channels would be the opposite order.
-        There's not much error checking here: if you supply an array that's too small
-        this function will produce undefined behavior.
         """
-        if(screen_data is None):
-            width = ale_lib.getScreenWidth(self.obj)
-            height = ale_lib.getScreenHeight(self.obj)
-            screen_data = np.empty((height, width,3), dtype=np.uint8)
-        ale_lib.getScreenRGB(self.obj, as_ctypes(screen_data[:]))
-        return screen_data
-
-    def getScreenRGB2(self, screen_data=None):
-        """This function fills screen_data with the data in RGB format.
-        screen_data MUST be a numpy array of uint8. This can be initialized like so:
-          screen_data = np.empty((height,width,3), dtype=np.uint8)
-        If it is None,  then this function will initialize it.
-        On all architectures, the channels are RGB order:
-            screen_data[x, y, :] is [red, green, blue]
-        There's not much error checking here: if you supply an array that's too small
-        this function will produce undefined behavior.
-        """
-        if(screen_data is None):
+        if screen_data is None:
             width = ale_lib.getScreenWidth(self.obj)
             height = ale_lib.getScreenHeight(self.obj)
             screen_data = np.empty((height, width, 3), dtype=np.uint8)
-        assert screen_data.strides == (480, 3, 1)
-        ale_lib.getScreenRGB2(self.obj, as_ctypes(screen_data[:]))
+        ale_lib.getScreenRGB(self.obj, as_ctypes(screen_data[:]))
         return screen_data
 
     def getScreenGrayscale(self, screen_data=None):
@@ -272,10 +278,10 @@ class ALEInterface(object):
         screen_data = np.empty((height,width,1), dtype=np.uint8)
         If it is None,  then this function will initialize it.
         """
-        if(screen_data is None):
+        if screen_data is None:
             width = ale_lib.getScreenWidth(self.obj)
             height = ale_lib.getScreenHeight(self.obj)
-            screen_data = np.empty((height, width,1), dtype=np.uint8)
+            screen_data = np.empty((height, width, 1), dtype=np.uint8)
         ale_lib.getScreenGrayscale(self.obj, as_ctypes(screen_data[:]))
         return screen_data
 
@@ -289,7 +295,7 @@ class ALEInterface(object):
         Notice: It must be ram_size where ram_size can be retrieved via the getRAMSize function.
         If it is None,  then this function will initialize it.
         """
-        if(ram is None):
+        if ram is None:
             ram_size = ale_lib.getRAMSize(self.obj)
             ram = np.zeros(ram_size, dtype=np.uint8)
         ale_lib.getRAM(self.obj, as_ctypes(ram))
@@ -297,7 +303,7 @@ class ALEInterface(object):
 
     def saveScreenPNG(self, filename):
         """Save the current screen as a png file"""
-        return ale_lib.saveScreenPNG(self.obj, _as_bytes(filename))
+        return ale_lib.saveScreenPNG(self.obj, _str_as_bytes(filename))
 
     def saveState(self):
         """Saves the state of the system"""
@@ -355,7 +361,11 @@ class ALEInterface(object):
 
     @staticmethod
     def setLoggerMode(mode):
-        dic = {'info': 0, 'warning': 1, 'error': 2}
+        dic = {"info": 0, "warning": 1, "error": 2}
         mode = dic.get(mode, mode)
-        assert mode in [0, 1, 2], "Invalid Mode! Mode must be one of 0: info, 1: warning, 2: error"
+        assert mode in [
+            0,
+            1,
+            2,
+        ], "Invalid Mode! Mode must be one of 0: info, 1: warning, 2: error"
         ale_lib.setLoggerMode(mode)

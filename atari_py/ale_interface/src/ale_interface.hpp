@@ -15,9 +15,9 @@
  * Foundation, Inc., 51 Franklin Street, Fifth Floor, Boston, MA 02110-1301, USA.
  * *****************************************************************************
  * A.L.E (Arcade Learning Environment)
- * Copyright (c) 2009-2013 by Yavar Naddaf, Joel Veness, Marc G. Bellemare and 
+ * Copyright (c) 2009-2013 by Yavar Naddaf, Joel Veness, Marc G. Bellemare and
  *   the Reinforcement Learning and Artificial Intelligence Laboratory
- * Released under the GNU General Public License; see License.txt for details. 
+ * Released under the GNU General Public License; see License.txt for details.
  *
  * Based on: Stella  --  "An Atari 2600 VCS Emulator"
  * Copyright (c) 1995-2007 by Bradford W. Mott and the Stella team
@@ -27,6 +27,7 @@
  *
  *  The shared library interface.
  **************************************************************************** */
+
 #ifndef __ALE_INTERFACE_HPP__
 #define __ALE_INTERFACE_HPP__
 
@@ -45,13 +46,15 @@
 #include <string>
 #include <memory>
 
+namespace ale {
+
 static const std::string Version = "0.6.0";
 
 /**
    This class interfaces ALE with external code for controlling agents.
  */
 class ALEInterface {
-public:
+ public:
   ALEInterface();
   ~ALEInterface();
   // Legacy constructor
@@ -72,8 +75,9 @@ public:
 
   // Resets the Atari and loads a game. After this call the game
   // should be ready to play. This is necessary after changing a
-  // setting for the setting to take effect.
-  void loadROM(std::string rom_file);
+  // setting for the setting to take effect. Optionally specify
+  // a new ROM to load.
+  void loadROM(std::string rom_file = {});
 
   // Applies an action to the game and returns the reward. It is the
   // user's responsibility to check if the game has ended and reset
@@ -96,6 +100,11 @@ public:
   // This should be called only after the rom is loaded.
   void setMode(game_mode_t m);
 
+  // Returns the game mode value last specified to the environment.
+  // This may not be the exact game mode that the ROM is currently running as
+  // game mode changes only take effect when the environment is reset.
+  game_mode_t getMode() const { return environment->getMode(); }
+
   //Returns the vector of difficulties available for the current game.
   //This should be called only after the rom is loaded. Notice
   // that there are 2 levers, the right and left switches. They
@@ -113,6 +122,9 @@ public:
   // The difficulty must be an available mode (otherwise it throws an exception).
   // This should be called only after the rom is loaded.
   void setDifficulty(difficulty_t m);
+
+  // Returns the current difficulty switch setting in use by the environment.
+  difficulty_t getDifficulty() const { return environment->getDifficulty(); }
 
   // Returns the vector of legal actions. This should be called only
   // after the rom is loaded.
@@ -132,7 +144,7 @@ public:
   int getEpisodeFrameNumber() const;
 
   // Returns the current game screen
-  const ALEScreen &getScreen();
+  const ALEScreen& getScreen();
 
   //This method should receive an empty vector to fill it with
   //the grayscale colours
@@ -144,7 +156,7 @@ public:
   void getScreenRGB(std::vector<unsigned char>& output_rgb_buffer);
 
   // Returns the current RAM content
-  const ALERAM &getRAM();
+  const ALERAM& getRAM();
 
   // Saves the state of the system
   void saveState();
@@ -171,10 +183,10 @@ public:
   // Save the current screen as a png file
   void saveScreenPNG(const std::string& filename);
 
-  // Creates a ScreenExporter object which can be used to save a sequence of frames. Ownership 
+  // Creates a ScreenExporter object which can be used to save a sequence of frames. Ownership
   // said object is passed to the caller. Frames are saved in the directory 'path', which needs
-  // to exists. 
-  ScreenExporter *createScreenExporter(const std::string &path) const;
+  // to exists.
+  ScreenExporter* createScreenExporter(const std::string& path) const;
 
  public:
   std::unique_ptr<OSystem> theOSystem;
@@ -187,13 +199,15 @@ public:
   // Display ALE welcome message
   static std::string welcomeMessage();
   static void disableBufferedIO();
-  static void createOSystem(std::unique_ptr<OSystem> &theOSystem,
-                            std::unique_ptr<Settings> &theSettings);
+  static void createOSystem(std::unique_ptr<OSystem>& theOSystem,
+                            std::unique_ptr<Settings>& theSettings);
   static void loadSettings(const std::string& romfile,
-                           std::unique_ptr<OSystem> &theOSystem);
+                           std::unique_ptr<OSystem>& theOSystem);
 
  private:
-  static void checkForUnsupportedRom(std::unique_ptr<OSystem>& theOSystem);
+  static bool isSupportedRom(std::unique_ptr<OSystem>& theOSystem);
 };
 
-#endif
+}  // namespace ale
+
+#endif  // __ALE_INTERFACE_HPP__
